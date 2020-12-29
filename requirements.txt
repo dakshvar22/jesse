@@ -1,4 +1,4 @@
-arrow===0.17.0
+arrow>=0.17.0
 blinker~=1.4.0
 Click~=7.1.2
 crypto_empyrical~=1.0.4
