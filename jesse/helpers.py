@@ -18,7 +18,6 @@ import os
 
 CACHED_CONFIG = dict()
 DEFAULT_ENCODING = "utf-8"
-SLACK_URL = "https://hooks.slack.com/services/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"
 
 
 def app_currency():
