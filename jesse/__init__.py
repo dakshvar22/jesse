@@ -6,6 +6,7 @@ import click
 import pkg_resources
 
 import jesse.helpers as jh
+from pathlib import Path
 
 # Hide the "FutureWarning: pandas.util.testing is deprecated." caused by empyrical
 import warnings
@@ -320,6 +321,65 @@ def backtest(start_date, finish_date, debug, csv, json, fee, chart, tradingview)
             get_exchange(e).fee = 0
 
     backtest_mode.run(start_date, finish_date, chart=chart, tradingview=tradingview, csv=csv, json=json)
+
+    db.close_connection()
+
+
+
+@cli.command()
+@click.argument('start_date', required=True, type=str)
+@click.argument('finish_date', required=True, type=str)
+@click.argument('reports_folder', required=True, type=str)
+@click.option('--debug/--no-debug', default=False,
+              help='Displays logging messages instead of the progressbar. Used for debugging your strategy.')
+@click.option('--csv/--no-csv', default=False,
+              help='Outputs a CSV file of all executed trades on completion.')
+@click.option('--json/--no-json', default=False,
+              help='Outputs a JSON file of all executed trades on completion.')
+@click.option('--fee/--no-fee', default=True, help='You can use "--no-fee" as a quick way to set trading fee to zero.')
+@click.option('--chart/--no-chart', default=False,
+              help='Generates charts of daily portfolio balance and assets price change. Useful for a visual comparision of your portfolio against the market.')
+@click.option('--tradingview/--no-tradingview', default=False,
+              help="Generates an output that can be copy-and-pasted into tradingview.com's pine-editor too see the trades in their charts.")
+def generate_signal(start_date, finish_date, reports_folder, debug, csv, json, fee, chart, tradingview):
+    """
+    backtest mode. Enter in "YYYY-MM-DD" "YYYY-MM-DD"
+    """
+    validate_cwd()
+
+    from jesse.config import config
+    config['app']['trading_mode'] = 'backtest'
+
+    register_custom_exception_handler()
+
+    from jesse.services import db
+    from jesse.modes import backtest_mode
+    from jesse.services.selectors import get_exchange
+
+    # debug flag
+    config['app']['debug_mode'] = debug
+
+    # fee flag
+    if not fee:
+        for e in config['app']['trading_exchanges']:
+            config['env']['exchanges'][e]['fee'] = 0
+            get_exchange(e).fee = 0
+
+    todays_signal_report = backtest_mode.generate_signal(start_date, finish_date, chart=chart, tradingview=tradingview, csv=csv, json=json)
+
+    previous_report_file = Path(reports_folder) / f"{jh.get_previous_reports_file_name()}.json"
+    previous_signal_report = jh.load_report(previous_report_file) if os.path.exists(previous_report_file) else None
+
+    is_report_different = jh.are_reports_different(previous_signal_report, todays_signal_report)
+
+    if is_report_different:
+        print("Posting to slack")
+        slack_report = jh.construct_slack_report(previous_signal_report, todays_signal_report)
+        print(slack_report)
+        jh.post_slack_notification(slack_report)
+
+    current_report_file_name = Path(reports_folder) / f"{jh.get_current_report_file_name()}.json"
+    jh.dump_report(todays_signal_report, current_report_file_name)
 
     db.close_connection()
 

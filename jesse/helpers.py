@@ -9,8 +9,16 @@ import uuid
 import arrow
 import click
 import numpy as np
+import datetime
+from hashlib import md5
+from collections import defaultdict
+import json
+import requests
+import os
 
 CACHED_CONFIG = dict()
+DEFAULT_ENCODING = "utf-8"
+SLACK_URL = "https://hooks.slack.com/services/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"
 
 
 def app_currency():
@@ -285,6 +293,16 @@ def insert_list(index: int, item, arr: list):
 
     return arr[:index] + [item] + arr[index:]
 
+
+def get_current_time_in_epoch():
+
+    now = datetime.datetime.now()
+    # now = datetime.datetime.strptime('Mar 1 2020', '%b %d %Y')
+    now = now.replace(hour=0, minute=0, second=0)
+
+    epoch = datetime.datetime.utcfromtimestamp(0)
+
+    return int((now-epoch).total_seconds()) * 1000.0
 
 def is_backtesting():
     from jesse.config import config
@@ -695,3 +713,174 @@ def unique_list(arr) -> list:
     seen = set()
     seen_add = seen.add
     return [x for x in arr if not (x in seen or seen_add(x))]
+
+def deep_container_fingerprint(
+    obj, encoding=DEFAULT_ENCODING
+):
+    """Calculate a hash which is stable, independent of a containers key order.
+    Works for lists and dictionaries. For keys and values, we recursively call
+    `hash(...)` on them. Keep in mind that a list with keys in a different order
+    will create the same hash!
+    Args:
+        obj: dictionary or list to be hashed.
+        encoding: encoding used for dumping objects as strings
+    Returns:
+        hash of the container.
+    """
+    if isinstance(obj, dict):
+        return get_dictionary_fingerprint(obj, encoding)
+    if isinstance(obj, list):
+        return get_list_fingerprint(obj, encoding)
+    else:
+        return get_text_hash(str(obj), encoding)
+
+
+def get_dictionary_fingerprint(
+    dictionary, encoding=DEFAULT_ENCODING
+):
+    """Calculate the fingerprint for a dictionary.
+    The dictionary can contain any keys and values which are either a dict,
+    a list or a elements which can be dumped as a string.
+    Args:
+        dictionary: dictionary to be hashed
+        encoding: encoding used for dumping objects as strings
+    Returns:
+        The hash of the dictionary
+    """
+    stringified = json.dumps(
+        {
+            deep_container_fingerprint(k, encoding): deep_container_fingerprint(
+                v, encoding
+            )
+            for k, v in dictionary.items()
+        },
+        sort_keys=True,
+    )
+    return get_text_hash(stringified, encoding)
+
+
+def get_list_fingerprint(
+    elements, encoding=DEFAULT_ENCODING
+):
+    """Calculate a fingerprint for an unordered list.
+    Args:
+        elements: unordered list
+        encoding: encoding used for dumping objects as strings
+    Returns:
+        the fingerprint of the list
+    """
+    stringified = json.dumps(
+        [deep_container_fingerprint(element, encoding) for element in elements]
+    )
+    return get_text_hash(stringified, encoding)
+
+
+def get_text_hash(text, encoding=DEFAULT_ENCODING):
+    """Calculate the md5 hash for a text."""
+    return md5(text.encode(encoding)).hexdigest()  # nosec
+
+
+def convert_time_to_readable_format(time_in_epoch_ms):
+
+    date = datetime.datetime.fromtimestamp(time_in_epoch_ms // 1000)
+    return date.strftime('%Y-%m-%d')
+
+
+def generate_signals_report(open_positions, open_orders):
+
+    report = defaultdict(dict)
+    for position in open_positions:
+        position_meta = position.to_dict()
+        route = f"""{position_meta["exchange_name"]}-{position_meta["symbol"]}"""
+
+        report[route] = {
+            "quantity": position_meta["qty"],
+            "entry_price": position_meta["entry_price"],
+            "position_opened_at": convert_time_to_readable_format(position_meta["opened_at"])
+        }
+        # Find stop loss and limit order for this position
+        for order in open_orders:
+            order_meta = order.to_dict()
+            order_route = f"""{order_meta["exchange"]}-{order_meta["symbol"]}"""
+            if order_route != route:
+                continue
+
+            # This order corresponds to the current position.
+            if order.type == "LIMIT":
+                report[route]["limit_price"] = order_meta["price"]
+                report[route]["limit_price_opened_at"] = convert_time_to_readable_format(order_meta["created_at"])
+
+            elif order.type == "STOP":
+                report[route]["stop_price"] = order_meta["price"]
+                report[route]["stop_price_opened_at"] = convert_time_to_readable_format(order_meta["created_at"])
+
+    return report
+
+
+def load_report(report_path):
+    with open(report_path) as f:
+        return json.load(f)
+
+
+def dump_report(report, report_path):
+    with open(report_path, 'w') as f:
+        return json.dump(report, f, indent=4)
+
+
+def are_reports_different(report_1, report_2):
+    if report_1 is None or report_2 is None:
+        return True
+    return deep_container_fingerprint(report_1) != deep_container_fingerprint(report_2)
+
+
+def get_previous_reports_file_name(time_frame=1):
+
+    previous_date = datetime.datetime.now() - datetime.timedelta(time_frame)
+    return previous_date.strftime("%Y-%m-%d")
+
+
+def get_current_report_file_name():
+    return datetime.datetime.now().strftime("%Y-%m-%d")
+
+
+def post_request(url, data):
+
+    payload = json.dumps(data)
+
+    headers = {
+        'content-type': "application/json",
+        'cache-control': "no-cache",
+        'postman-token': "43084823-288a-42ac-3c3e-60582379b79d"
+    }
+
+    response = requests.request("POST", url, data=payload, headers=headers)
+    print(response)
+
+
+def construct_slack_report(previous_report, current_report):
+
+    data = \
+        f"""
+            Changes detected from yesterday:
+            ********************************
+
+            Previous Report
+            {previous_report}
+
+            ================================
+
+            Latest Report
+            {current_report}
+        """
+
+    return {"text": data}
+
+
+def post_slack_notification(data):
+
+    slack_url = os.getenv("SLACK_URL", None)
+    print(slack_url)
+    if slack_url:
+        post_request(slack_url, data)
+
+

@@ -66,6 +66,9 @@ class Order:
             )
         )
 
+    def to_dict(self):
+        return self.__dict__
+
     @property
     def is_canceled(self) -> bool:
         return self.status == order_statuses.CANCELED

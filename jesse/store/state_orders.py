@@ -68,6 +68,17 @@ class OrdersState:
                 c += 1
         return c
 
+    def get_all_active_orders(self) -> List[Order]:
+
+        active_orders = []
+        for key in self.storage:
+            if len(self.storage[key]):
+                for o in self.storage[key]:
+                    if o.is_active:
+                        active_orders.append(o)
+        return active_orders
+
+
     def count(self, exchange, symbol) -> int:
         """
 

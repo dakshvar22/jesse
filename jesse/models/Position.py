@@ -30,6 +30,9 @@ class Position:
         for a in attributes:
             setattr(self, a, attributes[a])
 
+    def to_dict(self):
+        return self.__dict__
+
     @property
     def value(self):
         """

@@ -21,3 +21,13 @@ class PositionsState:
             if p.is_open:
                 c += 1
         return c
+
+    def get_open_positions(self):
+
+        open_positions = []
+        for key in self.storage:
+            p = self.storage[key]
+            if p.is_open:
+                open_positions.append(p)
+
+        return open_positions
