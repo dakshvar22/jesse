@@ -277,7 +277,7 @@ def import_candles(exchange, symbol, start_date):
 
     from jesse.modes import import_candles_mode
 
-    import_candles_mode.run(exchange, symbol, start_date)
+    import_candles_mode.run(exchange, symbol, start_date, skip_confirmation=True)
 
     db.close_connection()
 
