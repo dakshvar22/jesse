@@ -365,9 +365,12 @@ def generate_signal(start_date, finish_date, reports_folder, debug, csv, json, f
             config['env']['exchanges'][e]['fee'] = 0
             get_exchange(e).fee = 0
 
+    print(f"Generating report for {finish_date}")
+
     todays_signal_report = backtest_mode.generate_signal(start_date, finish_date, chart=chart, tradingview=tradingview, csv=csv, json=json)
 
     previous_report_file = Path(reports_folder) / f"{jh.get_previous_reports_file_name()}.json"
+    print(f"Loading {previous_report_file} for comparison")
     previous_signal_report = jh.load_report(previous_report_file) if os.path.exists(previous_report_file) else None
 
     is_report_different = jh.are_reports_different(previous_signal_report, todays_signal_report)
@@ -379,6 +382,7 @@ def generate_signal(start_date, finish_date, reports_folder, debug, csv, json, f
         jh.post_slack_notification(slack_report)
 
     current_report_file_name = Path(reports_folder) / f"{jh.get_current_report_file_name()}.json"
+    print(f"Dumping to {current_report_file_name}")
     jh.dump_report(todays_signal_report, current_report_file_name)
 
     db.close_connection()
