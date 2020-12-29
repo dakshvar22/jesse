@@ -15,6 +15,7 @@ from collections import defaultdict
 import json
 import requests
 import os
+import pprint
 
 CACHED_CONFIG = dict()
 DEFAULT_ENCODING = "utf-8"
@@ -858,18 +859,20 @@ def post_request(url, data):
 
 def construct_slack_report(previous_report, current_report):
 
+    previous_report_str = pprint.pformat(dict(previous_report), indent=4) if previous_report else None
+    current_report_str = pprint.pformat(dict(current_report), indent=4) if current_report else None
     data = \
         f"""
             Changes detected from yesterday:
             ********************************
 
             Previous Report
-            {previous_report}
+            ```{previous_report_str}```
 
             ================================
 
             Latest Report
-            {current_report}
+            ```{current_report_str}```
         """
 
     return {"text": data}
